@@ -1,10 +1,10 @@
 from OTXv2 import OTXv2Cached, IndicatorTypes
+from datetime import datetime
 import logging
 import json
 import time
-import os
 import boto3
-
+from botocore.exceptions import ClientError
 
 class Feed:
     def __init__(self):
@@ -15,6 +15,7 @@ class Feed:
         self.metadata = []
         self.pulses = []
         self.client = boto3.client('s3')
+        self.buck_name = "zero-trust-io"
 
     def open(self, api_key):
         if not self.opened:
@@ -56,9 +57,21 @@ class Feed:
             json.dump(rules, outfile)
 
     def upload(self, file_name):
-        logging.info("uploading rules to s3")
-        with open(file_name, "rb") as outfile:
-            self.client.upload_fileobj(outfile, "zero-trust-io", "rules.json.updated")
+        timestamp = datetime.now().strftime("%Y:%m:%d-%H:%M:%S")
+        name_with_timestamp = "rules-{}.json".format(timestamp)
+
+        try:
+            with open(file_name, "rb") as outfile:
+                logging.info("uploading " + name_with_timestamp + " to s3")
+                self.client.upload_fileobj(outfile, self.buck_name, name_with_timestamp)
+
+            copy_source = {'Bucket': self.buck_name, 'Key': name_with_timestamp}
+            logging.info("copying " + name_with_timestamp + " to rules-current.json")
+            self.client.copy_object(CopySource=copy_source, Bucket=self.buck_name, Key="rules-current.json")
+        except ClientError as e:
+            logging.error(e)
+
+
 
     def process_pulse(self, pulse):
         logging.info("processing pulse")
